@@ -2,7 +2,7 @@ name: 날씨 수집
 
 on:
   schedule:
-    - cron: "17 * * * *"   # 매시 17분 (UTC 기준이지만 매시간이라 상관없음)
+    - cron: "7,27,47 * * * *"   # 20분마다 시도. 새 자료가 없으면 아무것도 하지 않고 끝남
   workflow_dispatch:        # Actions 탭에서 직접 실행 버튼
 
 permissions:
@@ -24,10 +24,15 @@ jobs:
         env:
           KMA_KEY: ${{ secrets.KMA_KEY }}
         run: python fetch_weather.py
+      - name: 산불 재난문자 받기
+        continue-on-error: true
+        env:
+          SAFETY_KEY: ${{ secrets.SAFETY_KEY }}
+        run: python fetch_alerts.py
       - name: 결과 저장
         run: |
           git config user.name "weather-bot"
           git config user.email "weather-bot@users.noreply.github.com"
-          git add weather.json history.json
+          git add -A weather.json history.json alerts.json 2>/dev/null || git add weather.json history.json
           git diff --cached --quiet || git commit -m "날씨 갱신"
           git push
