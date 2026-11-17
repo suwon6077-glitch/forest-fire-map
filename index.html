@@ -58,6 +58,28 @@ button:focus-visible,select:focus-visible,input:focus-visible,path:focus-visible
 #map path{stroke:var(--stroke);stroke-width:.6;cursor:pointer;vector-effect:non-scaling-stroke}
 #map path:hover{stroke:var(--sel);stroke-width:1.4}
 #map path.sel{stroke:var(--sel);stroke-width:2.2}
+.alerts .head{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+.alerts .head h3{margin:0}
+.alerts a{color:var(--accent);font-size:13.5px;font-weight:500}
+.alist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.alist li{border-left:4px solid var(--r4);padding:6px 10px;background:var(--bg);border-radius:4px}
+.alist li.notice{border-left-color:var(--line)}
+.alist .meta{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.alist .meta button{font:inherit;background:none;border:0;padding:0;color:var(--ink);font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.alist .tag{display:inline-block;background:var(--r4);color:#fff;border-radius:999px;padding:0 8px;font-size:12px;font-weight:600;margin-right:6px}
+.alist .tag.demo{background:var(--accent);color:var(--bg)}
+.demo-btn{font:inherit;font-size:13.5px;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer}
+.demo-btn[aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.demo-note{margin:0 0 8px;padding:8px 12px;border:1px dashed var(--accent);border-radius:6px;font-size:14px}
+.alerts details{margin-top:8px}
+.alerts summary{cursor:pointer;font-size:13.5px;color:var(--muted)}
+.alerts details .alist{margin-top:8px}
+#marks{pointer-events:none}
+#marks circle.ring{fill:#fff;stroke:var(--r4);vector-effect:non-scaling-stroke;stroke-width:3}
+#marks circle.dot{fill:var(--r4)}
+.zoombar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:8px}
+#map.zoomed{cursor:grab;touch-action:none}
+#map.dragging{cursor:grabbing}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:5px;vertical-align:-2px;border:1px solid var(--line)}
 .panel{display:flex;flex-direction:column;gap:14px}
@@ -122,10 +144,24 @@ footer p{margin:0 0 6px}
   </div>
 </div>
 
+<div class="card alerts" id="alerts"></div>
+
 <div class="card top" id="top"></div>
 
 <div class="main">
   <div class="card mapcard">
+    <div class="zoombar">
+      <div class="seg" role="group" aria-label="지도 확대">
+        <button type="button" data-view="full" aria-pressed="true">전체</button>
+        <button type="button" data-view="capital" aria-pressed="false">수도권</button>
+        <button type="button" data-view="busan" aria-pressed="false">부산·울산</button>
+      </div>
+      <div class="seg" role="group" aria-label="확대와 축소">
+        <button type="button" id="zin" aria-label="확대">＋</button>
+        <button type="button" id="zout" aria-label="축소">－</button>
+      </div>
+      <span class="small" id="zhint">마우스 휠로 확대·축소하고, 끌어서 옮깁니다.</span>
+    </div>
     <svg id="map" viewBox="0 0 560 600" role="img" aria-label="시군구별 산불 위험 지도"></svg>
     <div class="legend" id="legend"></div>
   </div>
@@ -145,7 +181,7 @@ footer p{margin:0 0 6px}
 <footer>
   <p><strong>읽는 법.</strong> 피해 위험 등급은 산불이 날 가능성이 아니라, 난다면 1ha 이상으로 번질 가능성을 뜻합니다. 발생 당시 습도, 풍속, 직전 72시간 강수 여부로 추정했습니다.</p>
   <p><strong>한계.</strong> 날씨만으로 피해 규모를 가르는 힘은 크지 않습니다(교차검증 AUC 0.62). 지형, 연료량, 진화 여건은 반영하지 못합니다. 참고용이며 산림청의 공식 산불위험예보가 아닙니다.</p>
-  <p><strong>자료.</strong> 산림청 산불통계데이터, 기상청 종관기상관측(ASOS) 시간자료. 행정구역 경계는 통계청 2013년 기준.</p>
+  <p><strong>자료.</strong> 산림청 산불통계데이터, 기상청 종관기상관측(ASOS) 시간자료와 초단기실황, 행정안전부 긴급재난문자. 행정구역 경계는 통계청 2013년 기준.</p>
 </footer>
 </div>
 
@@ -222,8 +258,83 @@ for(const k of Object.keys(regions).sort()){
   const p=document.createElementNS(NS,"path");
   p.setAttribute("d",d); p.setAttribute("tabindex","-1");
   const t=document.createElementNS(NS,"title"); p.appendChild(t);
-  p.addEventListener("click",()=>select(k));
+  p.addEventListener("click",()=>{ if(!dragMoved) select(k); });
   svg.appendChild(p); paths[k]=p;
+}
+
+// 확대, 축소, 끌어서 이동
+const FULL={x:0,y:0,w:560,h:600}, VIEWS={full:FULL, capital:{x:143,y:38,w:142,h:152}, busan:{x:333,y:298,w:92,h:98}};
+let view={x:0,y:0,w:560,h:600}, dragMoved=false, drag=null;
+function setView(v,name){
+  const w=Math.max(40,Math.min(FULL.w,v.w)), h=w*FULL.h/FULL.w;
+  view={x:Math.max(0,Math.min(FULL.w-w,v.x)), y:Math.max(0,Math.min(FULL.h-h,v.y)), w:w, h:h};
+  svg.setAttribute("viewBox",[view.x,view.y,view.w,view.h].map(n=>n.toFixed(1)).join(" "));
+  svg.classList.toggle("zoomed",view.w<FULL.w-1);
+  if(typeof drawMarkers==="function" && typeof marks!=="undefined") drawMarkers();
+  document.querySelectorAll("button[data-view]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.view===(name||(view.w>=FULL.w-1?"full":""))));
+}
+function zoomBy(f,cx,cy){
+  if(cx===undefined){cx=view.x+view.w/2; cy=view.y+view.h/2;}
+  setView({x:cx-(cx-view.x)*f, y:cy-(cy-view.y)*f, w:view.w*f});
+}
+function centerOn(v){ const h=v.w*FULL.h/FULL.w; return {x:v.x+v.w/2-v.w/2, y:v.y+v.h/2-h/2, w:v.w}; }
+document.querySelectorAll("button[data-view]").forEach(b=>b.addEventListener("click",()=>setView(centerOn(VIEWS[b.dataset.view]),b.dataset.view)));
+document.getElementById("zin").addEventListener("click",()=>zoomBy(1/1.6));
+document.getElementById("zout").addEventListener("click",()=>zoomBy(1.6));
+svg.addEventListener("dblclick",e=>{ const r=svg.getBoundingClientRect(); zoomBy(1/1.8, view.x+(e.clientX-r.left)/r.width*view.w, view.y+(e.clientY-r.top)/r.height*view.h); });
+// 마우스 휠: 커서 위치를 중심으로 확대·축소. 전체 보기에서 더 축소하려 하면 페이지가 스크롤된다
+svg.addEventListener("wheel",e=>{
+  if(e.deltaY>0 && view.w>=FULL.w-1) return;
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  zoomBy(e.deltaY<0?1/1.25:1.25, view.x+(e.clientX-r.left)/r.width*view.w, view.y+(e.clientY-r.top)/r.height*view.h);
+},{passive:false});
+svg.addEventListener("pointerdown",e=>{ dragMoved=false; if(view.w<FULL.w-1) drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y}; });
+window.addEventListener("pointermove",e=>{
+  if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(!dragMoved && Math.abs(dx)+Math.abs(dy)<5) return;
+  dragMoved=true; svg.classList.add("dragging");
+  const s=view.w/svg.getBoundingClientRect().width; setView({x:drag.vx-dx*s, y:drag.vy-dy*s, w:view.w});
+});
+window.addEventListener("pointerup",()=>{ drag=null; svg.classList.remove("dragging"); });
+window.addEventListener("pointercancel",()=>{ drag=null; svg.classList.remove("dragging"); });
+
+// 산불 재난문자 (alerts.json: 배포 사이트에서 자동 수집)
+let ALERTS=null;
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+const marks=document.createElementNS(NS,"g"); marks.setAttribute("id","marks"); svg.appendChild(marks);
+let DEMO=false;
+function two(n){return (n<10?"0":"")+n;}
+function demoItem(){ const d=new Date(); return {demo:true, kind:"fire", keys:["경북 의성"], region:"경상북도 의성군",
+  t:d.getFullYear()+"-"+two(d.getMonth()+1)+"-"+two(d.getDate())+" "+two(d.getHours())+":"+two(d.getMinutes()),
+  msg:"가상 예시입니다. 실제 상황이 아닙니다. 의성군 일원에 산불이 발생해 인근 주민에게 대피를 안내하는 재난문자가 발송됐다고 가정했습니다."}; }
+function alertItems(){ const a=ALERTS?ALERTS.items.slice():[]; if(DEMO) a.unshift(demoItem()); return a; }
+function fireKeys(){ const s={}; alertItems().forEach(i=>{ if(i.kind==="fire") i.keys.forEach(k=>{s[k]=1;}); }); return Object.keys(s).filter(k=>regions[k]); }
+function drawMarkers(){
+  const r=7*view.w/FULL.w; let h="";
+  fireKeys().forEach(k=>{ const c=px(regions[k].lon,regions[k].lat); h+='<circle class="ring" cx="'+c[0]+'" cy="'+c[1]+'" r="'+r.toFixed(2)+'"><title>'+esc(k)+' 산불 재난문자</title></circle><circle class="dot" cx="'+c[0]+'" cy="'+c[1]+'" r="'+(r*0.42).toFixed(2)+'"></circle>'; });
+  marks.innerHTML=h; svg.appendChild(marks);
+}
+function alertItem(i){
+  const who=i.keys.length===1?'<button type="button" data-k="'+esc(i.keys[0])+'">'+esc(i.region)+'</button>':esc(i.region);
+  return '<li class="'+i.kind+'"><div class="meta">'+(i.demo?'<span class="tag demo">가상 예시</span>':'')+(i.kind==="fire"?'<span class="tag">산불 발생</span>':'')+esc(i.t)+' · '+who+'</div><div>'+esc(i.msg)+'</div></li>';
+}
+function renderAlerts(){
+  const el=document.getElementById("alerts");
+  let h='<div class="head"><h3>산불 재난문자 (행정안전부 긴급재난문자, 최근 48시간)</h3><span class="row"><button type="button" class="demo-btn" id="demo-btn" aria-pressed="'+DEMO+'">'+(DEMO?"예시 끄기":"산불이 나면 어떻게 보이나요? 예시 보기")+'</button><a href="https://fd.forest.go.kr/ffas/" target="_blank" rel="noopener">산림청 실시간 산불 현황 보기</a></span></div>';
+  if(DEMO) h+='<p class="demo-note"><strong>가상 예시를 보는 중입니다.</strong> 아래 첫 문자와 지도의 의성군 붉은 점은 실제 산불이 아닙니다.</p>';
+  const all=alertItems(), fire=all.filter(i=>i.kind==="fire"), note=all.filter(i=>i.kind==="notice");
+  if(fire.length) h+='<ul class="alist">'+fire.map(alertItem).join("")+'</ul>';
+  else if(ALERTS) h+='<p>최근 48시간 동안 산불 발생이나 대피를 알리는 재난문자가 없습니다.</p>';
+  if(!ALERTS) h+='<p class="small"'+(fire.length?' style="margin-top:8px"':'')+'>실제 재난문자는 배포된 사이트에서 자동 수집해 표시합니다.</p>';
+  else {
+    if(note.length) h+='<details><summary>산불 예방·주의 안내 문자 '+note.length+'건</summary><ul class="alist">'+note.map(alertItem).join("")+'</ul></details>';
+    h+='<p class="small" style="margin-top:8px">'+esc(ALERTS.checked)+' 확인. 문자 내용을 자동으로 분류한 것이라 틀릴 수 있습니다. 지도의 붉은 점은 산불 발생 문자가 발송된 시군구입니다.</p>';
+  }
+  el.innerHTML=h;
+  el.querySelectorAll("button[data-k]").forEach(b=>b.addEventListener("click",()=>select(b.dataset.k)));
+  document.getElementById("demo-btn").addEventListener("click",()=>{ DEMO=!DEMO; renderAlerts(); if(DEMO) select("경북 의성"); else panel(); });
+  drawMarkers();
 }
 
 function fmt(n,d){return n.toLocaleString("ko-KR",{minimumFractionDigits:d||0,maximumFractionDigits:d||0});}
@@ -238,6 +349,7 @@ function paint(){
     p.classList.toggle("sel",k===state.sel);
   }
   if(state.sel) svg.appendChild(paths[state.sel]);
+  svg.appendChild(marks);
   const L=document.getElementById("legend"), items=state.mode==="risk"?GRADES:FREQ;
   L.innerHTML=(state.mode==="risk"?"<span>산불이 나면 1ha 이상으로 번질 위험</span>":"<span>"+state.month+"월 한 달 동안의 연평균 산불 건수</span>")+
     items.map(g=>'<span><i style="background:'+g.color+'"></i>'+g.name+'</span>').join("");
@@ -264,6 +376,8 @@ function panel(){
   const w=weatherOf(R), p=pBig(w), g=gradeOf(p), G=GSTAT[g], s=R.stat;
   let h='<div class="row"><h2>'+R.k+'</h2><span class="pill g'+(g+1)+'" style="background:'+GRADES[g].color+'">피해 위험 '+GRADES[g].name+'</span></div>';
   h+='<div><h3>'+wLabel()+'</h3><div class="kv"><div><b>'+w.hum+'%</b><span>습도</span></div><div><b>'+fmt(w.wind,1)+' m/s</b><span>풍속</span></div><div><b>'+fmt(w.rain72,1)+' mm</b><span>'+rainLabel()+'</span></div></div></div>';
+  const mine=alertItems().filter(i=>i.keys.indexOf(R.k)>=0);
+  if(mine.length) h+='<div class="alerts"><h3>이 지역의 산불 재난문자 (최근 48시간)</h3><ul class="alist">'+mine.map(alertItem).join("")+'</ul></div>';
   const sim=similar(w), areas=sim.map(f=>f[2]).sort((a,b)=>a-b), nbig=sim.filter(f=>f[2]>=1).length;
   const med=(areas[14]+areas[15])/2, hs=sim.map(f=>f[3]), ws=sim.map(f=>f[4]);
   const worst=sim.slice().sort((a,b)=>b[2]-a[2]).slice(0,6);
@@ -288,7 +402,7 @@ function panel(){
 function select(k){ if(!regions[k]) return; state.sel=k; paint(); panel(); try{localStorage.setItem("fire-sel",k);}catch(e){} }
 function render(){ paint(); topList(); panel(); }
 
-function setNotice(){ document.getElementById("notice").innerHTML=LIVE?"<strong>"+LIVE.base+" 기준</strong> 기상청 초단기실황으로 계산했습니다. 약 1시간마다 갱신됩니다.":"<strong>초안입니다.</strong> 현재 날씨 자리에 실제 관측 대신 예시 값이 들어 있습니다. 배포하면 기상청 초단기실황으로 자동 교체됩니다."; }
+function setNotice(){ document.getElementById("notice").innerHTML=LIVE?"<strong>"+LIVE.base+" 기준</strong> 기상청 초단기실황으로 계산했습니다. "+(function(){var h=Math.floor((Date.now()-new Date(LIVE.base.replace(" ","T")+":00+09:00").getTime())/3600000);return (h>=3?"자동 갱신이 늦어져 약 "+h+"시간 전 날씨입니다.":"보통 1~2시간 간격으로 갱신됩니다.")+" 이 화면은 5분마다 새 자료를 확인합니다.";})():"<strong>초안입니다.</strong> 현재 날씨 자리에 실제 관측 대신 예시 값이 들어 있습니다. 배포하면 기상청 초단기실황으로 자동 교체됩니다."; }
 setNotice();
 const msel=document.getElementById("month");
 for(let m=1;m<=12;m++){const o=document.createElement("option");o.value=m;o.textContent=m+"월";msel.appendChild(o);}
@@ -305,8 +419,20 @@ document.querySelectorAll("button[data-scn]").forEach(b=>b.addEventListener("cli
 document.querySelector("#gtable tbody").innerHTML=GSTAT.map((G,i)=>'<tr><td><span class="pill g'+(i+1)+'" style="background:'+GRADES[i].color+'">'+GRADES[i].name+'</span></td><td>'+fmt(G.n)+'건</td><td>'+ha(G.med)+' ha</td><td>'+ha(G.p90)+' ha 이상</td><td>'+fmt(G.ge1,1)+'%</td><td>'+G.ge100+'건</td></tr>').join("");
 
 let init="경북 의성"; try{const s=localStorage.getItem("fire-sel"); if(s&&regions[s]) init=s;}catch(e){}
-state.sel=init; render();
-fetch("weather.json").then(r=>r.ok?r.json():null).then(j=>{ if(j&&j.regions&&j.base){ LIVE=j; setNotice(); render(); } }).catch(()=>{});
+state.sel=init; render(); renderAlerts();
+// 5분마다, 그리고 탭으로 돌아올 때 새 자료를 확인한다 (화면 전체를 다시 불러오지 않음)
+function getJson(name){ return fetch(name+"?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null); }
+function refresh(){
+  return Promise.all([getJson("weather.json"),getJson("alerts.json")]).then(([w,a])=>{
+    let changed=false;
+    if(w&&w.regions&&w.base&&(!LIVE||LIVE.base!==w.base)){ LIVE=w; changed=true; }
+    if(a&&a.items&&(!ALERTS||JSON.stringify(ALERTS)!==JSON.stringify(a))){ ALERTS=a; changed=true; }
+    setNotice(); if(changed){ render(); renderAlerts(); }
+  });
+}
+refresh();
+setInterval(refresh, 5*60*1000);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(); });
 </script>
 </body>
 </html>

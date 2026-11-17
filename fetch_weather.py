@@ -14,7 +14,7 @@ URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst
 KST = timezone(timedelta(hours=9))
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEEP_HOURS = 72      # 강수량을 누적하는 기간
-MAX_CATCHUP = 6      # 한 번 실행할 때 거슬러 받아오는 최대 시간 수
+MAX_CATCHUP = 24     # 한 번 실행할 때 거슬러 받아오는 최대 시간 수 (실황은 최근 24시간만 제공)
 
 
 def call_api(key, base, nx, ny):
